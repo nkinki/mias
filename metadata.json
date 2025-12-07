@@ -1,0 +1,7 @@
+{
+  "name": "MI Asszisztens v.4.",
+  "description": "Egy modern, letisztult irodai irányítópult, amely különféle MI-alapú eszközöket kínál a hatékonyság növeléséhez. Tartalmaz segédprogramokat fájlkonvertáláshoz, képelemzéshez, szöveggeneráláshoz és még sok máshoz.",
+  "requestFramePermissions": [
+    "microphone"
+  ]
+}
