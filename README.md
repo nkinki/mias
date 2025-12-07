@@ -37,7 +37,7 @@ Ez egy modern, React alapú mesterséges intelligencia asszisztens alkalmazás, 
 
 1.  Regisztrálj a [Vercel](https://vercel.com)-en.
 2.  Importáld a GitHub repódat.
-3.  A "Configure Project" lépésnél az **Environment Variables** részhez add hozzá:
-    *   **Key:** `API_KEY`
-    *   **Value:** A Google AI API kulcsod.
+3.  A "Configure Project" lépésnél az **Environment Variables** részhez add hozzá a következőket:
+    *   **Key:** `API_KEY` -> **Value:** A Google AI API kulcsod.
+    *   **Key:** `APP_PASSWORD` -> **Value:** A jelszó, amivel védeni szeretnéd az oldalt (pl. TitkosJelszo123).
 4.  Kattints a **Deploy** gombra.

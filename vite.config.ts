@@ -14,6 +14,7 @@ export default defineConfig(({ mode }) => {
       // Így a kódodban a process.env.API_KEY a Vercel-en beállított érték lesz,
       // vagy ha nincs beállítva, akkor üres marad (vagy ideiglenesen beírhatod fejlesztéshez, de ne commitold!)
       'process.env.API_KEY': JSON.stringify(env.API_KEY || ""),
+      'process.env.APP_PASSWORD': JSON.stringify(env.APP_PASSWORD || "admin"),
     },
   }
 })

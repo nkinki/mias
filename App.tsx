@@ -1,12 +1,10 @@
-
 import React, { useState, useEffect } from 'react';
 import { Dashboard } from './components/Dashboard';
 import { LoginScreen } from './components/LoginScreen';
 
-// --- KONFIGURÁCIÓ ---
-// Itt állíthatod be a saját jelszavadat!
-const APP_PASSWORD = "admin"; 
-// --------------------
+// A jelszó mostantól a környezeti változóból jön (Vercel), 
+// vagy 'admin' lesz, ha nincs beállítva (pl. helyi tesztelésnél).
+const APP_PASSWORD = process.env.APP_PASSWORD || "admin";
 
 function App() {
   // Initialize theme state based on localStorage or system preference
