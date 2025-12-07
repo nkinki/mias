@@ -1,13 +1,13 @@
-
 import { GoogleGenAI, GenerateContentResponse, Chat, Type, Modality } from "@google/genai";
-// Fix: Import EcgAnalysis and Presentation to be used in the new analyzeEcg and generatePresentation functions.
 import type { GroundedResponse, GroundingSource, LabReportAnalysis, CvData, EcgAnalysis, Presentation } from '../types';
 
-if (!process.env.API_KEY) {
-  throw new Error("Az API_KEY környezeti változó nincs beállítva");
+// Biztonságos inicializálás: Ha nincs kulcs, nem dobunk hibát azonnal, hogy az UI betöltődjön.
+const apiKey = process.env.API_KEY || "";
+if (!apiKey) {
+    console.warn("Az API_KEY nincs beállítva! Az AI funkciók nem fognak működni.");
 }
 
-const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const ai = new GoogleGenAI({ apiKey: apiKey });
 let chatInstance: Chat | null = null;
 
 const fileToGenerativePart = (base64: string, mimeType: string) => {
@@ -20,13 +20,14 @@ const fileToGenerativePart = (base64: string, mimeType: string) => {
 };
 
 export const analyzeImage = async (base64Image: string, mimeType: string, prompt: string): Promise<string> => {
+  if (!apiKey) throw new Error("API kulcs hiányzik.");
   const imagePart = fileToGenerativePart(base64Image, mimeType);
   try {
     const response: GenerateContentResponse = await ai.models.generateContent({
         model: 'gemini-2.5-flash',
         contents: { parts: [imagePart, { text: prompt }] },
     });
-    return response.text;
+    return response.text || "";
   } catch (error) {
     console.error("Hiba a kép elemzésekor:", error);
     return "Hiba: A kép elemzése nem sikerült.";
@@ -34,6 +35,7 @@ export const analyzeImage = async (base64Image: string, mimeType: string, prompt
 };
 
 export const editImage = async (base64Image: string, mimeType: string, prompt: string): Promise<string> => {
+  if (!apiKey) throw new Error("API kulcs hiányzik.");
   try {
     const response = await ai.models.generateContent({
       model: 'gemini-2.5-flash-image',
@@ -87,6 +89,7 @@ export const extractTextFromImage = async (base64Image: string, mimeType: string
 };
 
 export const extractTableFromImageAsJson = async (base64Image: string, mimeType: string): Promise<string> => {
+    if (!apiKey) throw new Error("API kulcs hiányzik.");
     const prompt = "Elemezd a táblázatot ezen a képen. A tartalmát add vissza érvényes JSON objektumok tömbjeként, ahol minden objektum egy sort képvisel. Az objektumok kulcsai legyenek az oszlopfejlécek. Ne tartalmazzon semmilyen más szöveget vagy magyarázatot, csak a nyers JSON-t.";
     try {
         const response = await ai.models.generateContent({
@@ -101,7 +104,7 @@ export const extractTableFromImageAsJson = async (base64Image: string, mimeType:
                 responseMimeType: "application/json",
             }
         });
-        return response.text;
+        return response.text || "[]";
     } catch (error) {
         console.error("Hiba a táblázat kinyerésekor:", error);
         return "[]";
@@ -109,6 +112,7 @@ export const extractTableFromImageAsJson = async (base64Image: string, mimeType:
 };
 
 export const transcribeAudio = async (base64Audio: string, mimeType: string): Promise<string> => {
+  if (!apiKey) throw new Error("API kulcs hiányzik.");
   const audioPart = fileToGenerativePart(base64Audio, mimeType);
   const prompt = "Írd át a hangfelvételt. Csak a hanganyagból származó szöveget add vissza.";
   try {
@@ -116,7 +120,7 @@ export const transcribeAudio = async (base64Audio: string, mimeType: string): Pr
         model: 'gemini-2.5-flash',
         contents: { parts: [audioPart, { text: prompt }] },
     });
-    return response.text;
+    return response.text || "";
   } catch (error) {
     console.error("Hiba az audio átírásakor:", error);
     return "Hiba: Az audiofájl átírása nem sikerült.";
@@ -124,12 +128,13 @@ export const transcribeAudio = async (base64Audio: string, mimeType: string): Pr
 };
 
 export const processText = async (text: string, prompt: string): Promise<string> => {
+    if (!apiKey) throw new Error("API kulcs hiányzik.");
     try {
         const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: `${prompt}\n\n---\n\n${text}`,
         });
-        return response.text;
+        return response.text || "";
     } catch (error) {
         console.error("Hiba a szöveg feldolgozásakor:", error);
         return "Hiba: A szöveg feldolgozása nem sikerült.";
@@ -137,6 +142,7 @@ export const processText = async (text: string, prompt: string): Promise<string>
 };
 
 export const analyzeLabReport = async (fileData: { base64: string, mimeType: string } | { text: string }, userQuestion: string): Promise<LabReportAnalysis> => {
+    if (!apiKey) throw new Error("API kulcs hiányzik.");
     const disclaimer = `***FIGYELEM: Ez az elemzés mesterséges intelligencia által generált, és kizárólag tájékoztató jellegű. NEM minősül orvosi tanácsadásnak. Az eredmények értelmezéséért és bármilyen egészségügyi döntés meghozataláért MINDIG konzultáljon kezelőorvosával!***`;
 
     const prompt = `Viselkedj MI-asszisztensként, amely segít a felhasználóknak megérteni az egészségügyi laborleleteiket. A célod, hogy közérthető magyarázatokat adj, kizárólag tájékoztatási céllal. A válaszodnak strukturált JSON formátumúnak kell lennie a megadott séma szerint.
@@ -205,16 +211,18 @@ A felhasználó kérdése: "${userQuestion || 'Nincs konkrét kérdés.'}"
             }
         });
         
-        const jsonText = response.text.trim();
+        const jsonText = (response.text || "{}").trim();
         const parsedData = JSON.parse(jsonText);
 
         // A `status` mező validálása, hogy biztosan a megengedett értékek egyike legyen
-        parsedData.results.forEach((item: any) => {
-            const validStatuses = ['normal', 'high', 'low', 'abnormal', 'information'];
-            if (!validStatuses.includes(item.status)) {
-                item.status = 'abnormal'; // Alapértelmezett érték, ha a modell mást adna vissza
-            }
-        });
+        if (parsedData.results && Array.isArray(parsedData.results)) {
+             parsedData.results.forEach((item: any) => {
+                const validStatuses = ['normal', 'high', 'low', 'abnormal', 'information'];
+                if (!validStatuses.includes(item.status)) {
+                    item.status = 'abnormal'; // Alapértelmezett érték, ha a modell mást adna vissza
+                }
+            });
+        }
 
         return parsedData;
 
@@ -224,8 +232,8 @@ A felhasználó kérdése: "${userQuestion || 'Nincs konkrét kérdés.'}"
     }
 };
 
-// Fix: Add analyzeEcg function to resolve import error in EcgAnalyzer.tsx.
 export const analyzeEcg = async (base64Image: string, mimeType: string, userQuestion: string): Promise<EcgAnalysis> => {
+    if (!apiKey) throw new Error("API kulcs hiányzik.");
     const disclaimer = `***FIGYELEM: Ez az elemzés mesterséges intelligencia által generált, és kizárólag oktatási és tájékoztató jellegű. NEM minősül orvosi diagnózisnak vagy tanácsadásnak. Az EKG-görbék szakszerű kiértékelése kizárólag kardiológus szakorvos feladata. SOHA ne hozzon egészségügyi döntést ezen elemzés alapján! MINDIG konzultáljon kezelőorvosával!***`;
 
     const prompt = `Viselkedj MI-asszisztensként, amely segít a felhasználóknak megérteni az EKG-leleteiket oktatási céllal. A célod, hogy közérthető magyarázatokat adj. A válaszodnak strukturált JSON formátumúnak kell lennie a megadott séma szerint. HANGSÚLYOZD MINDIG, HOGY EZ NEM ORVOSI DIAGNÓZIS.
@@ -290,16 +298,18 @@ A felhasználó kérdése: "${userQuestion || 'Nincs konkrét kérdés.'}"
             }
         });
 
-        const jsonText = response.text.trim();
+        const jsonText = (response.text || "{}").trim();
         const parsedData = JSON.parse(jsonText);
 
         // A `finding` mező validálása
-        parsedData.findings.forEach((item: any) => {
-            const validFindings = ['normal', 'borderline', 'abnormal', 'unclear'];
-            if (!validFindings.includes(item.finding)) {
-                item.finding = 'unclear'; // Alapértelmezett érték
-            }
-        });
+        if (parsedData.findings && Array.isArray(parsedData.findings)) {
+             parsedData.findings.forEach((item: any) => {
+                const validFindings = ['normal', 'borderline', 'abnormal', 'unclear'];
+                if (!validFindings.includes(item.finding)) {
+                    item.finding = 'unclear'; // Alapértelmezett érték
+                }
+            });
+        }
 
         return parsedData;
 
@@ -310,6 +320,7 @@ A felhasználó kérdése: "${userQuestion || 'Nincs konkrét kérdés.'}"
 };
 
 export const generateImageFromText = async (prompt: string): Promise<string> => {
+  if (!apiKey) throw new Error("API kulcs hiányzik.");
   try {
     const response = await ai.models.generateImages({
       model: 'imagen-4.0-generate-001',
@@ -319,6 +330,9 @@ export const generateImageFromText = async (prompt: string): Promise<string> => 
         outputMimeType: 'image/png',
       },
     });
+    if (!response.generatedImages || response.generatedImages.length === 0) {
+        throw new Error("Nem jött létre kép.");
+    }
     const base64ImageBytes: string = response.generatedImages[0].image.imageBytes;
     return base64ImageBytes;
   } catch (error) {
@@ -328,6 +342,7 @@ export const generateImageFromText = async (prompt: string): Promise<string> => 
 };
 
 export const generateSpeech = async (text: string, voiceName: 'Kore' | 'Zephyr' | 'Puck' | 'Charon' | 'Fenrir'): Promise<string> => {
+  if (!apiKey) throw new Error("API kulcs hiányzik.");
   try {
     const response = await ai.models.generateContent({
       model: "gemini-2.5-flash-preview-tts",
@@ -353,6 +368,7 @@ export const generateSpeech = async (text: string, voiceName: 'Kore' | 'Zephyr' 
 };
 
 export const generateVideo = async (prompt: string): Promise<any> => {
+    if (!apiKey) throw new Error("API kulcs hiányzik.");
     try {
         const operation = await ai.models.generateVideos({
             model: 'veo-2.0-generate-001',
@@ -369,6 +385,7 @@ export const generateVideo = async (prompt: string): Promise<any> => {
 };
 
 export const getVideosOperationStatus = async (operation: any): Promise<any> => {
+    if (!apiKey) throw new Error("API kulcs hiányzik.");
     try {
         const updatedOperation = await ai.operations.getVideosOperation({ operation: operation });
         return updatedOperation;
@@ -380,6 +397,10 @@ export const getVideosOperationStatus = async (operation: any): Promise<any> => 
 
 
 export const startChat = () => {
+  if (!apiKey) {
+      console.warn("API Key missing, cannot start chat.");
+      return;
+  }
   chatInstance = ai.chats.create({
     model: 'gemini-2.5-flash',
     config: {
@@ -393,12 +414,13 @@ export const resetChat = () => {
 };
 
 export const sendChatMessage = async (message: string): Promise<string> => {
+  if (!apiKey) return "Hiba: Az API kulcs nincs beállítva.";
   if (!chatInstance) {
     startChat();
   }
   try {
     const response = await chatInstance!.sendMessage({ message });
-    return response.text;
+    return response.text || "";
   } catch (error) {
     console.error("Hiba a csevegés során:", error);
     return "Sajnálom, hiba történt. Kérem, próbálja újra később.";
@@ -406,6 +428,7 @@ export const sendChatMessage = async (message: string): Promise<string> => {
 };
 
 export const answerFromText = async (text: string, question: string): Promise<string> => {
+    if (!apiKey) throw new Error("API kulcs hiányzik.");
     try {
         const prompt = `Válaszolj a következő kérdésre kizárólag az alább megadott szövegkörnyezet alapján. A válaszod legyen tömör és lényegretörő. Ha a válasz nem található meg a szövegben, egyértelműen közöld, hogy a dokumentum nem tartalmazza a keresett információt.
     
@@ -419,7 +442,7 @@ ${text}
             model: 'gemini-2.5-flash',
             contents: prompt,
         });
-        return response.text;
+        return response.text || "";
     } catch (error) {
         console.error("Hiba a szövegből való válaszadáskor:", error);
         return "Hiba: A válasz generálása nem sikerült.";
@@ -427,6 +450,7 @@ ${text}
 };
 
 export const summarizeUrlWithSearch = async (url: string): Promise<GroundedResponse> => {
+    if (!apiKey) throw new Error("API kulcs hiányzik.");
     try {
         const prompt = `Készíts egy részletes, magyar nyelvű összefoglalót a következő weboldal tartalmáról: ${url}`;
         const response = await ai.models.generateContent({
@@ -440,7 +464,7 @@ export const summarizeUrlWithSearch = async (url: string): Promise<GroundedRespo
         const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
 
         return {
-            text: response.text,
+            text: response.text || "",
             sources: sources as GroundingSource[],
         };
     } catch (error) {
@@ -450,6 +474,7 @@ export const summarizeUrlWithSearch = async (url: string): Promise<GroundedRespo
 };
 
 export const factCheckWithSearch = async (claim: string): Promise<GroundedResponse> => {
+    if (!apiKey) throw new Error("API kulcs hiányzik.");
     try {
         const prompt = `Viselkedj tényellenőrzőként. A Google Keresés segítségével alaposan vizsgáld meg a következő állítást. Adj egyértelmű következtetést (pl. Igaz, Hamis, Részben igaz, Vitatott), és indokold meg a válaszodat a talált bizonyítékok alapján. A válaszod legyen magyar nyelvű. Az állítás: "${claim}"`;
         const response = await ai.models.generateContent({
@@ -463,7 +488,7 @@ export const factCheckWithSearch = async (claim: string): Promise<GroundedRespon
         const sources = response.candidates?.[0]?.groundingMetadata?.groundingChunks || [];
 
         return {
-            text: response.text,
+            text: response.text || "",
             sources: sources as GroundingSource[],
         };
     } catch (error) {
@@ -473,6 +498,7 @@ export const factCheckWithSearch = async (claim: string): Promise<GroundedRespon
 };
 
 export const generateCv = async (cvData: CvData): Promise<string> => {
+    if (!apiKey) throw new Error("API kulcs hiányzik.");
     const prompt = `
     Viselkedj egy professzionális HR tanácsadóként és önéletrajz-íróként. A célod, hogy a felhasználó által megadott nyers adatokból egy kiváló minőségű, jól strukturált és meggyőző magyar nyelvű önéletrajzot készíts.
 
@@ -520,7 +546,7 @@ export const generateCv = async (cvData: CvData): Promise<string> => {
             model: 'gemini-2.5-pro',
             contents: prompt,
         });
-        return response.text;
+        return response.text || "";
     } catch (error) {
         console.error("Hiba az önéletrajz generálásakor:", error);
         throw new Error("Az önéletrajz generálása nem sikerült. Kérjük, próbálja újra később.");
@@ -528,6 +554,7 @@ export const generateCv = async (cvData: CvData): Promise<string> => {
 };
 
 export const generateRecipes = async (ingredients: string): Promise<string> => {
+    if (!apiKey) throw new Error("API kulcs hiányzik.");
     const prompt = `
     Viselkedj egy kreatív séfként. A feladatod, hogy a felhasználó által megadott alapanyagokból hozz létre egy vagy több ételreceptet. A válaszod legyen jól strukturált, könnyen követhető, és magyar nyelvű.
 
@@ -548,7 +575,7 @@ export const generateRecipes = async (ingredients: string): Promise<string> => {
             model: 'gemini-2.5-flash',
             contents: prompt,
         });
-        return response.text;
+        return response.text || "";
     } catch (error) {
         console.error("Hiba a receptek generálásakor:", error);
         throw new Error("A receptek generálása nem sikerült. Kérjük, próbálja újra később.");
@@ -556,6 +583,7 @@ export const generateRecipes = async (ingredients: string): Promise<string> => {
 };
 
 export const generateOrDebugCode = async (mode: 'generate' | 'debug', language: string, userInput: string): Promise<string> => {
+    if (!apiKey) throw new Error("API kulcs hiányzik.");
     let prompt = '';
 
     if (language === 'Excel Függvények') {
@@ -610,7 +638,7 @@ ${userInput}
             model: 'gemini-2.5-pro', // Using Pro for better code-related tasks
             contents: prompt,
         });
-        return response.text;
+        return response.text || "";
     } catch (error) {
         console.error("Hiba a kód generálásakor/hibakeresésekor:", error);
         throw new Error("A kérés feldolgozása nem sikerült. Kérjük, próbálja újra később.");
@@ -618,6 +646,7 @@ ${userInput}
 };
 
 export const generatePresentation = async (userInput: string): Promise<Presentation> => {
+    if (!apiKey) throw new Error("API kulcs hiányzik.");
     const prompt = `
     Készíts egy professzionális prezentáció vázlatot a következő témában vagy forrásanyagból.
     
@@ -669,7 +698,7 @@ export const generatePresentation = async (userInput: string): Promise<Presentat
             }
         });
 
-        const jsonText = response.text.trim();
+        const jsonText = (response.text || "{}").trim();
         return JSON.parse(jsonText) as Presentation;
 
     } catch (error) {
@@ -679,6 +708,7 @@ export const generatePresentation = async (userInput: string): Promise<Presentat
 };
 
 export const generateCryptoPost = async (amount: string): Promise<string> => {
+    if (!apiKey) throw new Error("API kulcs hiányzik.");
     const prompt = `
     Készíts egyetlen, figyelemfelkeltő, "hype" stílusú, szép közösségi média mondatot.
     A poszt nyelve legyen ANGOL (crypto twitter stílus).
@@ -699,7 +729,7 @@ export const generateCryptoPost = async (amount: string): Promise<string> => {
             model: 'gemini-2.5-flash',
             contents: prompt,
         });
-        return response.text.trim();
+        return (response.text || "").trim();
     } catch (error) {
         console.error("Hiba a crypto poszt generálásakor:", error);
         throw new Error("Nem sikerült a poszt generálása.");
@@ -707,6 +737,7 @@ export const generateCryptoPost = async (amount: string): Promise<string> => {
 };
 
 export const generateChessAd = async (inputText: string): Promise<string> => {
+    if (!apiKey) throw new Error("API kulcs hiányzik.");
     const prompt = `
     Viselkedj egy profi közösségi média menedzserként.
     A feladatod, hogy a megadott nyers szövegből (ami egy sakkos eseményről, pl. FarChess szól) készíts egy promóciós posztot.
@@ -730,7 +761,7 @@ export const generateChessAd = async (inputText: string): Promise<string> => {
             model: 'gemini-2.5-flash',
             contents: prompt,
         });
-        return response.text.trim();
+        return (response.text || "").trim();
     } catch (error) {
         console.error("Hiba a sakk reklám generálásakor:", error);
         throw new Error("Nem sikerült a poszt generálása.");
